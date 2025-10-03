@@ -1,10 +1,4 @@
-Perfect 👌 I’ll give you a **complete polished README.md** you can drop directly into your project before pushing to GitHub. It covers setup, environment, schema, queries, mutations, and examples.
 
-Here’s the full file:
-
----
-
-```markdown
 # 🚀 GraphQL API with Express & Mongoose
 
 This project is a simple **GraphQL API** for managing `Users` and `Companies`.  
