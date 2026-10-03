@@ -1,15 +1,17 @@
 {
-  "name": "server",
+  "name": "graphql-api-server",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "nodemon server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "seed": "node scripts/seed.js",
+    "test": "node --test"
   },
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "GraphQL API for users and companies with Express, Mongoose and DataLoader",
   "dependencies": {
     "cors": "^2.8.5",
     "dataloader": "^2.2.3",
@@ -17,7 +19,8 @@
     "express": "^5.1.0",
     "express-graphql": "^0.12.0",
     "graphql": "^15.10.1",
-    "mongoose": "^8.15.1"
+    "mongoose": "^8.15.1",
+    "graphql-fields-list": "^2.3.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

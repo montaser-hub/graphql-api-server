@@ -1,58 +1,60 @@
 import {
-  GraphQLSchema,
-  GraphQLObjectType,
-  GraphQLID,
   GraphQLError,
+  GraphQLID,
+  GraphQLInt,
   GraphQLList,
   GraphQLNonNull,
-  GraphQLInt,
+  GraphQLObjectType,
+  GraphQLSchema,
   GraphQLString,
 } from "graphql";
-import { CompanyType, UserType } from "./types.js";
 import { Company, User } from "../database/models.js";
+import { projectionFor } from "./projection.js";
+import { CompanyType, UserType } from "./types.js";
 
-/* any query is agraphql object typeb {fileds"callback" contains(type= return type of the field, resolve= callback function that returns the value), name(any name you want)} */
+const notFound = (type, id) => new GraphQLError(`Can't find the ${type} with id (${id})`);
+
+// Only the arguments that were actually passed, so an update never blanks a field.
+const definedOnly = (fields) =>
+  Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+
+async function assertCompanyExists(companyId) {
+  if (!(await Company.exists({ _id: companyId }))) throw notFound("company", companyId);
+}
+
 export default new GraphQLSchema({
   query: new GraphQLObjectType({
     name: "Query",
     fields: {
       user: {
         type: UserType,
-        args: { id: { type: GraphQLID } }, // new GraphQLNonNull(GraphQLID) to set field to be required
-        async resolve(_parentValue, args) {
-          let user = await User.findById(args.id); // {firstName, age, companyId}
-          if (!user) {
-            throw new GraphQLError(`Can't find the user with id (${args.id})`);
-          }
+        args: { id: { type: new GraphQLNonNull(GraphQLID) } },
+        async resolve(_parent, { id }, _context, info) {
+          const user = await User.findById(id).select(projectionFor(info));
+          if (!user) throw notFound("user", id);
           return user;
         },
       },
       users: {
         type: new GraphQLList(UserType),
-        async resolve(_parentNode, _args, context) {
-          console.log("########################################", context);
-          let users = await User.find();
-          return users;
+        // Reads only the fields the query selects.
+        resolve(_parent, _args, _context, info) {
+          return User.find().select(projectionFor(info));
         },
       },
       company: {
         type: CompanyType,
-        args: { id: { type: GraphQLID } },
-        async resolve(_parentValue, args) {
-          let company = await Company.findById(args.id); // {firstName, age, companyId}
-          if (!company) {
-            throw new GraphQLError(
-              `Can't find the company with id (${args.id})`
-            );
-          }
+        args: { id: { type: new GraphQLNonNull(GraphQLID) } },
+        async resolve(_parent, { id }) {
+          const company = await Company.findById(id);
+          if (!company) throw notFound("company", id);
           return company;
         },
       },
       companies: {
-        type: new GraphQLList(CompanyType), // type of the field that will be returned from the resolver as a list
-        async resolve() {
-          let companies = await Company.find();
-          return companies;
+        type: new GraphQLList(CompanyType),
+        resolve() {
+          return Company.find();
         },
       },
     },
@@ -66,29 +68,11 @@ export default new GraphQLSchema({
         args: {
           firstName: { type: new GraphQLNonNull(GraphQLString) },
           age: { type: new GraphQLNonNull(GraphQLInt) },
-          companyId: { type: new GraphQLNonNull(GraphQLID) },
+          companyId: { type: GraphQLID },
         },
-        async resolve(parent, args) {
-          const { firstName, age, companyId } = args;
-          const validateCompany = await Company.findById(companyId);
-          if (!validateCompany) {
-            throw new GraphQLError(
-              `Can't find the company with id (${companyId})`
-            );
-          }
-          let user = await User.create({ firstName, age, companyId });
-          return user;
-        },
-      },
-      createCompany: {
-        type: CompanyType,
-        args: {
-          name: { type: new GraphQLNonNull(GraphQLString) },
-          slogan: { type: new GraphQLNonNull(GraphQLString) },
-        },
-        async resolve(parent, args) {
-          const { name, slogan } = args;
-          return await Company.create({ name, slogan });
+        async resolve(_parent, { firstName, age, companyId }) {
+          if (companyId) await assertCompanyExists(companyId);
+          return User.create({ firstName, age, companyId });
         },
       },
       updateUser: {
@@ -99,13 +83,29 @@ export default new GraphQLSchema({
           age: { type: GraphQLInt },
           companyId: { type: GraphQLID },
         },
-        async resolve(parent, args) {
-          const { id, firstName, age, companyId } = args;
-          return await User.findByIdAndUpdate(id, {
-            firstName,
-            age,
-            companyId,
-          });
+        async resolve(_parent, { id, ...fields }) {
+          if (fields.companyId) await assertCompanyExists(fields.companyId);
+          const user = await User.findByIdAndUpdate(id, definedOnly(fields), { new: true });
+          if (!user) throw notFound("user", id);
+          return user;
+        },
+      },
+      deleteUser: {
+        type: GraphQLString,
+        args: { id: { type: new GraphQLNonNull(GraphQLID) } },
+        async resolve(_parent, { id }) {
+          if (!(await User.findByIdAndDelete(id))) throw notFound("user", id);
+          return "User deleted";
+        },
+      },
+      createCompany: {
+        type: CompanyType,
+        args: {
+          name: { type: new GraphQLNonNull(GraphQLString) },
+          slogan: { type: new GraphQLNonNull(GraphQLString) },
+        },
+        resolve(_parent, { name, slogan }) {
+          return Company.create({ name, slogan });
         },
       },
       updateCompany: {
@@ -115,30 +115,19 @@ export default new GraphQLSchema({
           name: { type: GraphQLString },
           slogan: { type: GraphQLString },
         },
-        async resolve(parent, args) {
-          const { id, name, slogan } = args;
-          return await Company.findByIdAndUpdate(id, { name, slogan });
-        },
-      },
-      deleteUser: {
-        type: GraphQLString,
-        args: {
-          id: { type: new GraphQLNonNull(GraphQLID) },
-        },
-        async resolve(parent, args) {
-          const { id } = args;
-          await User.findByIdAndDelete(id);
-          return "User deleted";
+        async resolve(_parent, { id, ...fields }) {
+          const company = await Company.findByIdAndUpdate(id, definedOnly(fields), { new: true });
+          if (!company) throw notFound("company", id);
+          return company;
         },
       },
       deleteCompany: {
         type: GraphQLString,
-        args: {
-          id: { type: new GraphQLNonNull(GraphQLID) },
-        },
-        async resolve(parent, args) {
-          const { id } = args;
-          await Company.findByIdAndDelete(id);
+        args: { id: { type: new GraphQLNonNull(GraphQLID) } },
+        async resolve(_parent, { id }) {
+          if (!(await Company.findByIdAndDelete(id))) throw notFound("company", id);
+          // Detach its users rather than leaving them pointing at a deleted company.
+          await User.updateMany({ companyId: id }, { $unset: { companyId: 1 } });
           return "Company deleted";
         },
       },

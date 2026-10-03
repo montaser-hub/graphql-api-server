@@ -1,23 +1,18 @@
-import {
-  GraphQLID,
-  GraphQLInt,
-  GraphQLList,
-  GraphQLObjectType,
-  GraphQLString,
-} from "graphql";
-import { User, Company } from "../database/models.js";
+import { GraphQLID, GraphQLInt, GraphQLList, GraphQLObjectType, GraphQLString } from "graphql";
+import { projectionFor } from "./projection.js";
 
 export const UserType = new GraphQLObjectType({
   name: "User",
-  // {firstName, age, companyId}
-  fields: () => ( {
+  fields: () => ({
     id: { type: GraphQLID },
     firstName: { type: GraphQLString },
     age: { type: GraphQLInt },
     company: {
       type: CompanyType,
-      async resolve(parentNode) {
-        return await Company.findById(parentNode.companyId);
+      // Batched: every user's company in one query is fetched with a single find().
+      resolve(user, _args, context, info) {
+        if (!user.companyId) return null;
+        return context.loaders.companyLoader.load({ id: user.companyId, fields: projectionFor(info) });
       },
     },
   }),
@@ -25,14 +20,14 @@ export const UserType = new GraphQLObjectType({
 
 export const CompanyType = new GraphQLObjectType({
   name: "Company",
-  fields: () => ( {
+  fields: () => ({
     id: { type: GraphQLID },
     name: { type: GraphQLString },
     slogan: { type: GraphQLString },
     users: {
       type: new GraphQLList(UserType),
-      async resolve(parentNode) {
-        return await User.find({ companyId: parentNode._id });
+      resolve(company, _args, context) {
+        return context.loaders.usersByCompanyLoader.load(company._id);
       },
     },
   }),

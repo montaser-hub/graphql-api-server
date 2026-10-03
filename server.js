@@ -1,44 +1,32 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { graphqlHTTP } from "express-graphql";
 import connectDB from "./database/connection.js";
-import { graphqlHTTP } from "express-graphql";//connect to graphql server
+import { createLoaders } from "./loaders/loaders.js";
 import schema from "./schema/schema.js";
 
-//^ Load environment variables
 dotenv.config();
-//^ Connect to MongoDB
-connectDB();
+await connectDB();
 
-//* make express instance
 const app = express();
-
-//^ Enable CORS
 app.use(cors());
-
-//^ Parse JSON bodies
 app.use(express.json());
 
-//^ routes
 app.get("/welcoming", (req, res) => {
   res.send("Welcome To Express Server!");
 });
 
-let x = 0;
-
 app.use(
   "/graphql",
-  graphqlHTTP((req, res) => {
-    return {
-      schema,// graphQL schema query, mutation, subscription
-      graphiql: true,//show graphiql interface for development
-      context: {
-        test: x++,
-      },
-    };
-  })
+  graphqlHTTP(() => ({
+    schema,
+    graphiql: process.env.NODE_ENV !== "production", // in-browser IDE for development
+    context: { loaders: createLoaders() }, // fresh DataLoader caches per request
+  }))
 );
 
-app.listen(3000, () => {
-  console.log("Express endpoint: http://localhost:3000");
+const port = process.env.PORT || 4000;
+app.listen(port, () => {
+  console.log(`GraphQL endpoint: http://localhost:${port}/graphql`);
 });
