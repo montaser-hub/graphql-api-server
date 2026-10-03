@@ -1,258 +1,82 @@
+# GraphQL API — Users & Companies
 
-# 🚀 GraphQL API with Express & Mongoose
+A GraphQL API built with Express, Mongoose and `graphql-js` for managing users and the companies they work for.
+It covers the parts of GraphQL that matter beyond CRUD: nested relations resolved without N+1 queries
+(DataLoader), reading only the fields a query asks for, and clear errors for missing records.
 
-This project is a simple **GraphQL API** for managing `Users` and `Companies`.  
-It demonstrates how to integrate **GraphQL** with **Express.js** and **Mongoose** in a clean and structured way.
+![GraphiQL running a nested users → company query](docs/graphiql.webp)
 
----
+## Highlights
 
-## 📂 Project Structure
+- **No N+1 queries.** `users { company { … } }` takes two database queries however many users there are:
+  DataLoader batches every company lookup into one `find()`, and does the same for `companies { users { … } }`.
+  Loaders are created per request, so their cache never serves data a mutation has since changed.
+- **Field-level projection.** Resolvers turn the query's selection set into a MongoDB projection, so
+  `{ users { firstName } }` reads only `firstName`.
+- **Safe mutations.** Updates change only the fields passed and return the updated record; updating or deleting a
+  missing id is an error, not a silent success; deleting a company detaches its users.
+- **Tests** run real GraphQL operations against MongoDB and count the queries sent (Node's built-in test runner).
 
+## Schema
+
+```graphql
+type User    { id: ID, firstName: String, age: Int, company: Company }
+type Company { id: ID, name: String, slogan: String, users: [User] }
+
+type Query {
+  user(id: ID!): User
+  users: [User]
+  company(id: ID!): Company
+  companies: [Company]
+}
+
+type Mutation {
+  createUser(firstName: String!, age: Int!, companyId: ID): User
+  updateUser(id: ID!, firstName: String, age: Int, companyId: ID): User
+  deleteUser(id: ID!): String
+  createCompany(name: String!, slogan: String!): Company
+  updateCompany(id: ID!, name: String, slogan: String): Company
+  deleteCompany(id: ID!): String
+}
 ```
 
-server/
-├── database/
-│   ├── connect.js        # MongoDB connection helper
-│   ├── models.js         # Mongoose models (User, Company)
-├── graphql/
-│   ├── schema.js         # GraphQL Schema (queries + mutations)
-│   ├── types.js          # GraphQL object types
-├── server.js             # Express server entry point
-├── package.json
-└── .env                  # Environment variables
+## Running locally
 
-````
-
----
-
-## ⚙️ Setup
-
-### 1. Clone the repo
-```bash
-git clone <your-repo-url>
-cd server
-````
-
-### 2. Install dependencies
+Needs Node.js 20+ and MongoDB (`docker run -d -p 27017:27017 mongo:7` works).
 
 ```bash
 npm install
+cp .env.example .env
+npm run seed     # 3 companies, 8 users
+npm run dev      # http://localhost:4000/graphql (GraphiQL in the browser)
 ```
 
-### 3. Configure environment variables
+Try it:
 
-Create a `.env` file in the project root:
+```graphql
+{ companies { name users { firstName age } } }
 
-```env
-MONGODB_URI=mongodb://localhost:27017/graphql_app
-PORT=4000
+mutation { createUser(firstName: "Ali", age: 28) { id firstName } }
 ```
 
-### 4. Start the server
+## Tests
 
 ```bash
-npm start
+MONGODB_URI=mongodb://127.0.0.1:27017/graphql_test npm test
 ```
 
-By default, GraphQL Playground is available at:
+Use a throwaway database: the tests wipe it. They check query batching (by counting the queries Mongoose
+sends), projection, update and delete behaviour, and that a request never sees a stale cache.
+
+## Project structure
 
 ```
-http://localhost:4000/graphql
+server.js            Express app, /graphql endpoint, per-request loaders
+database/            MongoDB connection and Mongoose models
+schema/schema.js     Queries and mutations
+schema/types.js      User and Company types
+schema/projection.js Selection set → MongoDB projection
+loaders/loaders.js   DataLoaders for user → company and company → users
+scripts/seed.js      Demo data
+test/                Integration tests
 ```
-
----
-
-## 📌 GraphQL Schema Overview
-
-### User
-
-```graphql
-type User {
-  id: ID!
-  firstName: String
-  age: Int
-  company: Company
-}
-```
-
-### Company
-
-```graphql
-type Company {
-  id: ID!
-  name: String
-  slogan: String
-  users: [User]
-}
-```
-
----
-
-## 🔎 Queries
-
-### Get all users
-
-```graphql
-query {
-  users {
-    id
-    firstName
-    age
-    company {
-      name
-    }
-  }
-}
-```
-
-### Get a user by ID
-
-```graphql
-query {
-  user(id: "USER_ID_HERE") {
-    id
-    firstName
-    age
-    company {
-      name
-    }
-  }
-}
-```
-
-### Get all companies
-
-```graphql
-query {
-  companies {
-    id
-    name
-    slogan
-    users {
-      firstName
-    }
-  }
-}
-```
-
-### Get a company by ID
-
-```graphql
-query {
-  company(id: "COMPANY_ID_HERE") {
-    id
-    name
-    slogan
-    users {
-      firstName
-    }
-  }
-}
-```
-
----
-
-## ✏️ Mutations
-
-### Create a user
-
-```graphql
-mutation {
-  createUser(firstName: "Montaser", age: 29, companyId: "COMPANY_ID_HERE") {
-    id
-    firstName
-    age
-    company {
-      name
-    }
-  }
-}
-```
-
-### Update a user
-
-```graphql
-mutation {
-  updateUser(id: "USER_ID_HERE", firstName: "Updated Name", age: 30) {
-    id
-    firstName
-    age
-    company {
-      name
-    }
-  }
-}
-```
-
-### Delete a user
-
-```graphql
-mutation {
-  deleteUser(id: "USER_ID_HERE")
-}
-```
-
----
-
-### Create a company
-
-```graphql
-mutation {
-  createCompany(name: "OpenAI", slogan: "Discover the Future") {
-    id
-    name
-    slogan
-  }
-}
-```
-
-### Update a company
-
-```graphql
-mutation {
-  updateCompany(id: "COMPANY_ID_HERE", slogan: "Innovation for Tomorrow") {
-    id
-    name
-    slogan
-  }
-}
-```
-
-### Delete a company
-
-```graphql
-mutation {
-  deleteCompany(id: "COMPANY_ID_HERE")
-}
-```
-
----
-
-## ✅ Example Flow
-
-1. **Create a Company**
-2. **Create Users** under that company
-3. **Query Users** with their company info
-4. **Update User/Company** details
-5. **Delete Users/Companies** when no longer needed
-
----
-
-## 🛠️ Tech Stack
-
-* [Node.js](https://nodejs.org/)
-* [Express.js](https://expressjs.com/)
-* [GraphQL](https://graphql.org/)
-* [Express-GraphQL](https://www.npmjs.com/package/express-graphql)
-* [Mongoose](https://mongoosejs.com/)
-* [MongoDB](https://www.mongodb.com/)
-
----
-
-## 📜 License
-
-This project is licensed under the **MIT License**.
-
-```
-
-
